@@ -1,0 +1,31 @@
+{
+  "name": "research-agency-ai",
+  "version": "0.1.0",
+  "description": "Autonomous multi-agent workflow modeling a full research agency (Managing Director through Ops/Finance/Legal), running end-to-end on an LLM with dual-mode provider routing: Claude subscription passthrough or direct API keys with OpenRouter multi-key waterfall failover.",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "research-agency": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/cli.js",
+    "dev": "tsx src/cli.ts",
+    "test": "node --test --import tsx test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "cross-spawn": "^7.0.6",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/cross-spawn": "^6.0.6",
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "license": "UNLICENSED"
+}
