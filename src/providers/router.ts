@@ -1,12 +1,13 @@
 import type { CompletionRequest, CompletionResult, LLMProvider } from "./types.js";
 import { ProviderError } from "./types.js";
 import { PassthruProvider } from "./passthru.js";
+import { LocalProvider } from "./local.js";
 import { AnthropicDirectProvider } from "./anthropicDirect.js";
 import { OpenAIDirectProvider } from "./openaiDirect.js";
 import { OpenRouterWaterfallProvider } from "./openrouterWaterfall.js";
 import { MockProvider } from "./mock.js";
 
-export type LLMMode = "auto" | "passthru" | "api" | "mock";
+export type LLMMode = "auto" | "passthru" | "local" | "api" | "mock";
 
 export interface RouterOptions {
   mode?: LLMMode;
@@ -16,20 +17,23 @@ export interface RouterOptions {
 /**
  * Top-level provider router implementing the two operating modes:
  *
- *   1. "passthru" — runs through the Claude Agent SDK, reusing the user's existing
- *      logged-in Claude subscription (no separate API billing).
- *   2. "api"      — direct API keys. Tries Anthropic, then OpenAI, then OpenRouter's
+ *   1. "passthru" — shells out to your own logged-in `claude` CLI, reusing your
+ *      existing Claude subscription (no separate API billing).
+ *   2. "local"    — any OpenAI-compatible local server (Ollama, LM Studio, etc.),
+ *      used automatically "if installed" — free and private.
+ *   3. "api"      — direct API keys. Tries Anthropic, then OpenAI, then OpenRouter's
  *      multi-key waterfall (auto-rotating across OPENROUTER_API_KEYS on failure).
  *
  * "auto" (the default) prefers passthru — since it rides the subscription you're
- * already paying for — and transparently falls back to the API chain if the
- * subscription session isn't available or a call fails. This is what satisfies
- * "use the current subscription as passthru, if not 100% allow another provider
- * like OpenRouter with multi-key auto rotation (waterfall)".
+ * already paying for — then a local model if one is actually running, and only
+ * then falls back to the paid API chain. This is what satisfies "use the current
+ * subscription as passthru, run on a local LLM if installed, and if not 100%
+ * allow another provider like OpenRouter with multi-key auto rotation (waterfall)".
  */
 export class LLMRouter {
   private readonly mode: LLMMode;
   private readonly passthru = new PassthruProvider();
+  private readonly local = new LocalProvider();
   private readonly apiChain: LLMProvider[] = [
     new AnthropicDirectProvider(),
     new OpenAIDirectProvider(),
@@ -47,12 +51,15 @@ export class LLMRouter {
         return [this.mock];
       case "passthru":
         return [this.passthru];
+      case "local":
+        return [this.local];
       case "api":
         return this.availableApiChain();
       case "auto":
       default: {
         const chain: LLMProvider[] = [];
         if (await this.passthru.isAvailable()) chain.push(this.passthru);
+        if (await this.local.isAvailable()) chain.push(this.local);
         chain.push(...(await this.availableApiChain()));
         return chain;
       }

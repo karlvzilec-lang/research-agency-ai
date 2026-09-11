@@ -2,7 +2,7 @@
   "name": "research-agency-ai",
   "version": "0.1.0",
   "description": "Autonomous multi-agent workflow modeling a full research agency (Managing Director through Ops/Finance/Legal), running end-to-end on an LLM with dual-mode provider routing: Claude subscription passthrough or direct API keys with OpenRouter multi-key waterfall failover.",
-  "private": true,
+  "private": false,
   "type": "module",
   "bin": {
     "research-agency": "dist/cli.js"
@@ -27,5 +27,10 @@
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   },
-  "license": "UNLICENSED"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/karlvzilec-lang/research-agency-ai.git"
+  },
+  "homepage": "https://github.com/karlvzilec-lang/research-agency-ai#readme"
 }

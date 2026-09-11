@@ -1,11 +1,23 @@
 import type { LLMRouter } from "../providers/router.js";
+import type { QADimension } from "../qa/format.js";
 import type { RoleDefinition } from "./roles.js";
+
+export interface AgentQAInfo {
+  verdict: "PASS" | "PASS_AFTER_REVISION" | "REVISE_MAX_ATTEMPTS";
+  overallScore: number;
+  scores: Partial<Record<QADimension, number>>;
+  critique: string;
+  revisions: number;
+  parseOk: boolean;
+}
 
 export interface AgentRunResult {
   roleId: string;
   roleTitle: string;
   output: string;
   route: string;
+  /** Present when the output went through the brutal-QA review loop. */
+  qa?: AgentQAInfo;
 }
 
 /**

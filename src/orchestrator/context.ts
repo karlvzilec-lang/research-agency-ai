@@ -1,12 +1,14 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AgentRunResult } from "../agents/agent.js";
+import type { EngagementPlan } from "./engagementPlan.js";
 
 export interface EngagementContext {
   id: string;
   brief: string;
   startedAt: string;
   outputs: AgentRunResult[];
+  plan?: EngagementPlan;
 }
 
 export function createContext(brief: string): EngagementContext {
@@ -40,6 +42,42 @@ export function recordOutput(ctx: EngagementContext, result: AgentRunResult): vo
   ctx.outputs.push(result);
 }
 
+/** Records a role that was deliberately skipped by the dynamic engagement plan — no LLM call needed. */
+export function recordSkipped(ctx: EngagementContext, roleId: string, roleTitle: string, reason: string): void {
+  ctx.outputs.push({
+    roleId,
+    roleTitle,
+    output: `_Not required for this engagement._\n\n${reason}`,
+    route: "skipped (dynamic scoping)",
+  });
+}
+
+function qaBlock(output: AgentRunResult): string {
+  if (!output.qa) return "";
+  const scoreLines = Object.entries(output.qa.scores)
+    .map(([k, v]) => `- ${k}: ${v}/10`)
+    .join("\n");
+  return [
+    "",
+    "## Quality Assurance — 360° Review",
+    "",
+    `**Verdict:** ${output.qa.verdict} — **Overall:** ${output.qa.overallScore}/10 (${output.qa.revisions} revision(s))`,
+    "",
+    scoreLines,
+    "",
+    `**Reviewer critique:** ${output.qa.critique}`,
+  ].join("\n");
+}
+
+function qaSummaryTable(outputs: AgentRunResult[]): string {
+  const rows = outputs
+    .filter((o) => o.qa)
+    .map((o) => `| ${o.roleTitle} | ${o.qa!.verdict} | ${o.qa!.overallScore}/10 | ${o.qa!.revisions} |`)
+    .join("\n");
+  if (!rows) return "_QA disabled for this run._";
+  return ["| Deliverable | Verdict | Overall | Revisions |", "|---|---|---|---|", rows].join("\n");
+}
+
 export async function writeEngagementToDisk(ctx: EngagementContext, outRoot: string): Promise<string> {
   const dir = path.join(outRoot, ctx.id);
   await mkdir(dir, { recursive: true });
@@ -55,13 +93,14 @@ export async function writeEngagementToDisk(ctx: EngagementContext, outRoot: str
       `_Route: ${output.route}_`,
       "",
       output.output,
+      qaBlock(output),
       "",
     ].join("\n");
     await writeFile(path.join(dir, filename), body, "utf8");
   }
 
   const finalReport = [
-    `# Research Engagement Report`,
+    "# Research Engagement Report",
     "",
     `Generated: ${ctx.startedAt}`,
     "",
@@ -69,7 +108,23 @@ export async function writeEngagementToDisk(ctx: EngagementContext, outRoot: str
     "",
     ctx.brief,
     "",
-    ...ctx.outputs.flatMap((o) => ["## " + o.roleTitle, "", o.output, ""]),
+    ...(ctx.plan
+      ? [
+          "## Engagement Scope (dynamic workflow decision)",
+          "",
+          `**Type:** ${ctx.plan.engagementType}`,
+          "",
+          `**Rationale:** ${ctx.plan.rationale}`,
+          "",
+          `Qualitative: ${ctx.plan.needsQualitative ? "yes" : "no"} · Quantitative: ${ctx.plan.needsQuantitative ? "yes" : "no"} · Fieldwork: ${ctx.plan.needsFieldwork ? "yes" : "no"} · Data analysis: ${ctx.plan.needsDataAnalysis ? "yes" : "no"}`,
+          "",
+        ]
+      : []),
+    "## Quality Assurance Summary",
+    "",
+    qaSummaryTable(ctx.outputs),
+    "",
+    ...ctx.outputs.flatMap((o) => ["## " + o.roleTitle, "", o.output, qaBlock(o), ""]),
   ].join("\n");
   const finalPath = path.join(dir, "FINAL-REPORT.md");
   await writeFile(finalPath, finalReport, "utf8");

@@ -10,11 +10,13 @@ interface Args {
   briefFile?: string;
   mode?: LLMMode;
   outDir: string;
+  noQa: boolean;
+  qaMaxRevisions?: number;
   help: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { outDir: "output", help: false };
+  const args: Args = { outDir: "output", noQa: false, help: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     switch (a) {
@@ -29,6 +31,12 @@ function parseArgs(argv: string[]): Args {
         break;
       case "--out":
         args.outDir = argv[++i];
+        break;
+      case "--no-qa":
+        args.noQa = true;
+        break;
+      case "--qa-max-revisions":
+        args.qaMaxRevisions = Number(argv[++i]);
         break;
       case "-h":
       case "--help":
@@ -48,19 +56,27 @@ Usage:
   research-agency run --brief "text of the client brief"
   research-agency run --brief-file examples/sample-brief.md
   research-agency run --brief-file examples/sample-brief.md --mode api
+  research-agency run --brief-file examples/sample-brief.md --mode local
   research-agency run --brief-file examples/sample-brief.md --mode mock --out ./tmp
 
 Options:
-  --brief <text>        Client brief, inline.
-  --brief-file <path>   Client brief, read from a file (overrides --brief).
-  --mode <mode>         auto (default) | passthru | api | mock
-                           auto     - prefer your Claude subscription (passthru),
-                                      fall back to API keys (Anthropic/OpenAI/OpenRouter)
-                           passthru - only use your logged-in Claude subscription
-                           api      - only use direct API keys / OpenRouter waterfall
-                           mock     - no network calls, deterministic placeholder text
-  --out <dir>           Output directory for the engagement report (default: ./output)
-  -h, --help             Show this help.
+  --brief <text>          Client brief, inline.
+  --brief-file <path>     Client brief, read from a file (overrides --brief).
+  --mode <mode>           auto (default) | passthru | local | api | mock
+                             auto     - prefer your Claude subscription (passthru), then a local
+                                        LLM if one is running, then API keys (Anthropic/OpenAI/OpenRouter)
+                             passthru - only use your logged-in Claude subscription
+                             local    - only use a local OpenAI-compatible server (Ollama, LM Studio, ...)
+                             api      - only use direct API keys / OpenRouter waterfall
+                             mock     - no network calls, deterministic placeholder text
+  --out <dir>             Output directory for the engagement report (default: ./output)
+  --no-qa                 Skip the brutal-QA revision loop (faster/cheaper, lower bar)
+  --qa-max-revisions <n>  Max QA-triggered revisions per deliverable (default: 2)
+  -h, --help              Show this help.
+
+The workflow is dynamic: the Research Director scopes each brief (full mixed-methods study,
+quant/qual-only, or a lightweight desk-research/advisory consultation) and the pipeline only
+runs the roles that scope actually calls for.
 `);
 }
 
@@ -105,6 +121,10 @@ async function main(): Promise<void> {
     brief,
     router,
     outputDir: args.outDir,
+    qa: {
+      enabled: !args.noQa,
+      maxRevisions: args.qaMaxRevisions,
+    },
     onPhase: (phase, detail) => {
       console.log(detail ? `[${phase}] ${detail}` : `[${phase}]`);
     },
