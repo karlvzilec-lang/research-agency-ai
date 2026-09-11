@@ -16,6 +16,8 @@ export interface QAReviewParams {
   brief: string;
   roleTitle: string;
   deliverable: string;
+  /** Provider(s) to steer the router away from — e.g. the one that just generated this draft. */
+  excludeProviders?: string[];
 }
 
 export interface QA360Params {
@@ -31,7 +33,7 @@ export interface QA360Params {
 export class QAReviewer {
   constructor(private readonly router: LLMRouter) {}
 
-  async review(params: QAReviewParams): Promise<{ verdict: QAVerdict; route: string }> {
+  async review(params: QAReviewParams): Promise<{ verdict: QAVerdict; route: string; providerName: string }> {
     const system = `${QA_PERSONA}
 
 Score the deliverable on this 360-degree rubric (1-10 each):
@@ -45,8 +47,8 @@ ${QA_OUTPUT_FORMAT_TEMPLATE}`;
 
     const prompt = `Client brief:\n${params.brief}\n\nDeliverable under review, produced by: ${params.roleTitle}\n\n---\n${params.deliverable}\n---\n\nReview it now.`;
 
-    const result = await this.router.complete({ system, prompt });
-    return { verdict: parseQAVerdict(result.text), route: result.route };
+    const result = await this.router.complete({ system, prompt, excludeProviders: params.excludeProviders });
+    return { verdict: parseQAVerdict(result.text), route: result.route, providerName: result.providerName };
   }
 
   async perform360Analysis(params: QA360Params): Promise<{ text: string; route: string }> {

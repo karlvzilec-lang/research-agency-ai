@@ -72,7 +72,7 @@ export class LLMRouter {
   }
 
   async complete(req: CompletionRequest): Promise<CompletionResult> {
-    const providers = await this.orderedProviders();
+    let providers = await this.orderedProviders();
     if (providers.length === 0) {
       throw new ProviderError(
         `No LLM provider available for mode "${this.mode}". Configure a subscription login ` +
@@ -80,6 +80,14 @@ export class LLMRouter {
         "router",
         false
       );
+    }
+
+    // Genuine cross-provider verification (e.g. brutal QA shouldn't grade its own
+    // generation with the same model): drop excluded providers, but only if that
+    // still leaves at least one candidate — never fail a call just to enforce this.
+    if (req.excludeProviders?.length) {
+      const filtered = providers.filter((p) => !req.excludeProviders!.includes(p.name));
+      if (filtered.length > 0) providers = filtered;
     }
 
     const errors: string[] = [];

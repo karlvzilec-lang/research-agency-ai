@@ -3,6 +3,7 @@ import type { CompletionRequest, CompletionResult, LLMProvider } from "./types.j
 const QA_REVIEW_MARKER = "VERDICT: PASS or REVISE";
 const QA_360_MARKER = "OVERALL ENGAGEMENT GRADE";
 const ENGAGEMENT_PLAN_MARKER = "ENGAGEMENT_TYPE:";
+const DEPTH_MARKER = "DEPTH: direct_research or full_engagement";
 
 const QA_PASS_RESPONSE = `VERDICT: PASS
 SCORES:
@@ -31,6 +32,9 @@ NEEDS_FIELDWORK: yes
 NEEDS_DATA_ANALYSIS: yes
 PLAN_RATIONALE: [MOCK] deterministic full-scope plan so pipeline wiring exercises every role in tests.`;
 
+const DEPTH_RESPONSE = `DEPTH: full_engagement
+DEPTH_RATIONALE: [MOCK] deterministic full-engagement default so pipeline wiring exercises every role in tests.`;
+
 /**
  * Deterministic offline provider used by tests and `--mode mock` dry-runs so the
  * pipeline wiring can be verified without spending real API credits or requiring
@@ -52,6 +56,8 @@ export class MockProvider implements LLMProvider {
       text = QA_PASS_RESPONSE;
     } else if (req.system.includes(QA_360_MARKER)) {
       text = QA_360_RESPONSE;
+    } else if (req.system.includes(DEPTH_MARKER)) {
+      text = DEPTH_RESPONSE;
     } else if (req.system.includes(ENGAGEMENT_PLAN_MARKER)) {
       text = ENGAGEMENT_PLAN_RESPONSE;
     } else {

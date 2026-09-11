@@ -2,6 +2,12 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AgentRunResult } from "../agents/agent.js";
 import type { EngagementPlan } from "./engagementPlan.js";
+import type { EngagementDepth } from "./depthClassifier.js";
+
+export interface AppliedLesson {
+  roleId: string;
+  lesson: string;
+}
 
 export interface EngagementContext {
   id: string;
@@ -9,6 +15,10 @@ export interface EngagementContext {
   startedAt: string;
   outputs: AgentRunResult[];
   plan?: EngagementPlan;
+  depth?: EngagementDepth;
+  depthRationale?: string;
+  usedRealDataset?: boolean;
+  appliedLessons: AppliedLesson[];
 }
 
 export function createContext(brief: string): EngagementContext {
@@ -18,6 +28,7 @@ export function createContext(brief: string): EngagementContext {
     brief,
     startedAt: startedAt.toISOString(),
     outputs: [],
+    appliedLessons: [],
   };
 }
 
@@ -42,13 +53,14 @@ export function recordOutput(ctx: EngagementContext, result: AgentRunResult): vo
   ctx.outputs.push(result);
 }
 
-/** Records a role that was deliberately skipped by the dynamic engagement plan — no LLM call needed. */
+/** Records a role that was deliberately skipped by the dynamic engagement plan/depth — no LLM call needed. */
 export function recordSkipped(ctx: EngagementContext, roleId: string, roleTitle: string, reason: string): void {
   ctx.outputs.push({
     roleId,
     roleTitle,
     output: `_Not required for this engagement._\n\n${reason}`,
     route: "skipped (dynamic scoping)",
+    providerName: "skipped",
   });
 }
 
@@ -62,6 +74,7 @@ function qaBlock(output: AgentRunResult): string {
     "## Quality Assurance — 360° Review",
     "",
     `**Verdict:** ${output.qa.verdict} — **Overall:** ${output.qa.overallScore}/10 (${output.qa.revisions} revision(s))`,
+    `**Independent review:** ${output.qa.crossProviderChecked ? "yes — a different provider graded this than the one that generated it" : "no — only one provider was available, so this is self-reviewed"}`,
     "",
     scoreLines,
     "",
@@ -72,10 +85,13 @@ function qaBlock(output: AgentRunResult): string {
 function qaSummaryTable(outputs: AgentRunResult[]): string {
   const rows = outputs
     .filter((o) => o.qa)
-    .map((o) => `| ${o.roleTitle} | ${o.qa!.verdict} | ${o.qa!.overallScore}/10 | ${o.qa!.revisions} |`)
+    .map(
+      (o) =>
+        `| ${o.roleTitle} | ${o.qa!.verdict} | ${o.qa!.overallScore}/10 | ${o.qa!.revisions} | ${o.qa!.crossProviderChecked ? "yes" : "no"} |`
+    )
     .join("\n");
   if (!rows) return "_QA disabled for this run._";
-  return ["| Deliverable | Verdict | Overall | Revisions |", "|---|---|---|---|", rows].join("\n");
+  return ["| Deliverable | Verdict | Overall | Revisions | Independent |", "|---|---|---|---|---|", rows].join("\n");
 }
 
 export async function writeEngagementToDisk(ctx: EngagementContext, outRoot: string): Promise<string> {
@@ -108,15 +124,23 @@ export async function writeEngagementToDisk(ctx: EngagementContext, outRoot: str
     "",
     ctx.brief,
     "",
+    "## Engagement Scope (dynamic workflow decision)",
+    "",
+    ...(ctx.depth
+      ? [
+          `**Process depth:** ${ctx.depth}${ctx.depthRationale ? ` — ${ctx.depthRationale}` : ""}`,
+          "",
+        ]
+      : []),
     ...(ctx.plan
       ? [
-          "## Engagement Scope (dynamic workflow decision)",
-          "",
-          `**Type:** ${ctx.plan.engagementType}`,
+          `**Research type:** ${ctx.plan.engagementType}`,
           "",
           `**Rationale:** ${ctx.plan.rationale}`,
           "",
           `Qualitative: ${ctx.plan.needsQualitative ? "yes" : "no"} · Quantitative: ${ctx.plan.needsQuantitative ? "yes" : "no"} · Fieldwork: ${ctx.plan.needsFieldwork ? "yes" : "no"} · Data analysis: ${ctx.plan.needsDataAnalysis ? "yes" : "no"}`,
+          "",
+          `**Data source:** ${ctx.usedRealDataset ? "a real dataset was supplied and analyzed with computed statistics" : "no primary dataset supplied — any quantitative sections are a research design/analysis PLAN, not results"}`,
           "",
         ]
       : []),
@@ -124,6 +148,16 @@ export async function writeEngagementToDisk(ctx: EngagementContext, outRoot: str
     "",
     qaSummaryTable(ctx.outputs),
     "",
+    ...(ctx.appliedLessons.length > 0
+      ? [
+          "## Continuous Improvement — Lessons Applied This Run",
+          "",
+          "Learned from QA critiques on prior engagements and fed back in as guardrails:",
+          "",
+          ...ctx.appliedLessons.map((l) => `- **${l.roleId}:** ${l.lesson}`),
+          "",
+        ]
+      : []),
     ...ctx.outputs.flatMap((o) => ["## " + o.roleTitle, "", o.output, qaBlock(o), ""]),
   ].join("\n");
   const finalPath = path.join(dir, "FINAL-REPORT.md");

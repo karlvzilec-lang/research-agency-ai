@@ -5,3 +5,4 @@ dist/
 output/
 *.log
 .DS_Store
+.research-agency-memory.json

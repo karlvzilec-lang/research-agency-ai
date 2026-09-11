@@ -5,6 +5,10 @@ export interface CompletionRequest {
   prompt: string;
   /** Soft cap the provider should aim for; not all providers enforce it. */
   maxTokens?: number;
+  /** Ask a provider that supports it (passthru, anthropic-direct) to use real live web search. Ignored by providers that don't support it — never an error. */
+  useWebSearch?: boolean;
+  /** Provider names to skip for this call (e.g. so QA doesn't grade its own generation with the same model). Ignored if honoring it would leave zero candidates. */
+  excludeProviders?: string[];
 }
 
 export interface CompletionResult {

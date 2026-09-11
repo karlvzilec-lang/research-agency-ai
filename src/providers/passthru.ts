@@ -58,6 +58,10 @@ export class PassthruProvider implements LLMProvider {
   }
 
   async complete(req: CompletionRequest): Promise<CompletionResult> {
+    // Real live web research for desk-research-type calls: allow exactly WebSearch/WebFetch
+    // (nothing else — no Bash/Write/Edit/file access) so this call can cite real, current
+    // sources through the same subscription. Every other call stays fully tool-free.
+    const allowedTools = req.useWebSearch ? "WebSearch WebFetch" : "";
     const args = [
       "-p",
       req.prompt,
@@ -67,7 +71,7 @@ export class PassthruProvider implements LLMProvider {
       "json",
       "--strict-mcp-config",
       "--allowedTools",
-      "",
+      allowedTools,
     ];
     if (this.model) args.push("--model", this.model);
 
@@ -96,7 +100,7 @@ export class PassthruProvider implements LLMProvider {
     return {
       text: (parsed.result ?? "").trim(),
       providerName: this.name,
-      route: this.name,
+      route: req.useWebSearch ? `${this.name}+web_search` : this.name,
     };
   }
 

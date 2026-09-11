@@ -41,38 +41,99 @@ Ecommerce, Fintech, Banking, and FMCG** (real category KPIs and vocabulary:
 ARPU/churn for Telco, GMV/CAC/LTV for Ecommerce, TPV/take-rate for Fintech,
 NPL/CASA for Banking, distribution/share-of-shelf for FMCG).
 
+## Research execution, not just report shape
+
+Four things make this an execution engine rather than a report-shape generator:
+
+- **Real desk research.** The Research Consultant/Analyst's call runs with live
+  web search — through the Claude subscription passthrough's `WebSearch` tool,
+  or Anthropic's native `web_search` tool on direct-API calls — whenever the
+  active provider supports it, so findings can cite real, current, dated
+  sources instead of only training-data recall. When search genuinely isn't
+  available, the agent is required to say so and flag which claims are
+  unverified recall, rather than presenting them as checked.
+- **Real quantitative grounding.** Pass `--data your-file.csv` and the
+  Quantitative Researcher / Data Analyst are handed actual computed statistics
+  — means, medians, stdev, category frequencies, and pairwise Pearson
+  correlations, computed deterministically in code (`src/analysis/stats.ts`),
+  not estimated by an LLM — and required to work strictly from those numbers.
+  With no dataset supplied, they're required to say so and produce a clearly
+  labeled research design/analysis **plan**, never fabricated "illustrative"
+  findings dressed up as results.
+- **Independent QA.** The brutal-QA reviewer runs on a *different* provider
+  than the one that generated the draft whenever more than one is actually
+  available (e.g. Claude passthru generates, a local model or a different API
+  key reviews) — so QA isn't just the same model grading its own homework. The
+  report honestly flags when only one provider was available and QA had to be
+  self-reviewed.
+- **Persistent, cross-engagement learning.** Every QA critique that triggers a
+  revision is written to a small local lesson store
+  (`src/memory/agencyMemory.ts`) and fed back into that same role's prompt on
+  the *next* engagement. An LLM call can't update its own weights, but the
+  agency accumulates a durable playbook across runs — genuine improvement from
+  experience, not a fixed prompt repeated forever. Disable with `--no-memory`,
+  clear it with `--reset-memory`.
+
 ## Dynamic workflow
 
-The workflow isn't a fixed 12-step checklist run on every brief. The
-**Research Director scopes the engagement** — full mixed-methods study,
-quant-only, qual-only, or a lightweight desk-research/advisory
-**consultation** — and the pipeline only runs the roles that scope actually
-calls for. A "sanity check this hypothesis for us" request gets answered as a
-fast, cheap consultation; a full churn-driver study gets the full fieldwork
-treatment. See [`src/orchestrator/engagementPlan.ts`](src/orchestrator/engagementPlan.ts).
+The workflow isn't a fixed 12-step checklist run on every brief — it flexes on two independent axes:
+
+1. **How much research** — the **Research Director scopes the methodology**:
+   full mixed-methods study, quant-only, qual-only, or a lightweight
+   desk-research/advisory consultation — and the pipeline only runs the roles
+   that scope actually calls for. See
+   [`src/orchestrator/engagementPlan.ts`](src/orchestrator/engagementPlan.ts).
+2. **How much ceremony** — an **intake triage decides engagement depth**:
+   a `full_engagement` gets the complete client-management process (proposal,
+   budget, timeline, sign-off, invoicing); a `direct_research` request — "can
+   you look into X", "what's driving Y", "sanity-check this for me" — skips
+   the Managing Director, Account Director, and Ops/Finance/Legal entirely and
+   goes straight to delivering the research answer. Controls (QA, the 360°
+   capstone) still apply regardless — this axis only cuts commercial ceremony,
+   never quality checking. Force it with `--depth direct_research` /
+   `--depth full_engagement`, or leave it on `auto`. See
+   [`src/orchestrator/depthClassifier.ts`](src/orchestrator/depthClassifier.ts).
+
+A "sanity check this hypothesis for us" request gets answered as a fast, cheap,
+ceremony-free consultation; a commissioned churn-driver study gets the full
+fieldwork treatment.
 
 ```
-Managing Director  →  Account Director  →  Research Director (scopes the engagement)
+Intake triage — direct_research or full_engagement?
+                                            │
+              ┌─────────────────────────────┴─────────────────────────────┐
+    [direct_research]                                            [full_engagement]
+              │                                                             │
+              │                                          Managing Director → Account Director
+              │                                                             │
+              └─────────────────────────────┬───────────────────────────────┘
+                                             ▼
+                          Research Director (scopes the RESEARCH — qual/quant/fieldwork/data)
+                                             │
+                     ┌───────────────────────┤ (parallel — all depend only on Research Director)
+                     │                       │
+             Project Manager   Desk Research (+ live web search)   [Qual Design]*   [Quant Design]*
+                     │                                  │                                │
+                     └──────────────────┬────────────────┴────────────────────────────────┘
+                                         ▼
+                        [Fieldwork Coordinator]*  (only if primary data collection is in scope)
+                                         ▼
+                       [Data Analyst / Scientist]*  (real stats if --data given, honest plan if not)
+                                         ▼
+                              Insights Strategist
+                                         ▼
+                     Designer / Visualization (deck for a study, memo for a consultation)
+                                         │
+              ┌───────────────────────────┴───────────────────────────┐
+    [direct_research: stop here]                          [full_engagement]
                                                                         │
-                        ┌───────────────────────────────────────────────┤ (parallel — all
-                        │                                                │  depend only on
-                Project Manager   Desk Research   [Qual Design]*   [Quant Design]*   Research Director)
-                        │                                    │                │
-                        └──────────────────┬─────────────────┴────────────────┘
-                                            ▼
-                           [Fieldwork Coordinator]*  (only if primary data collection is in scope)
-                                            ▼
-                              [Data Analyst / Scientist]*  (only if there's data to process)
-                                            ▼
-                                 Insights Strategist
-                                            ▼
-                        Designer / Visualization (deck for a study, memo for a consultation)
-                                            ▼
-                            Operations, Finance & Legal
-                                            ▼
-                       Managing Director (final sign-off)
-                                            ▼
-                         360° Engagement Analysis (capstone)
+                                                    Operations, Finance & Legal
+                                                                        ▼
+                                                    Managing Director (final sign-off)
+                                                                        │
+              └───────────────────────────┬───────────────────────────┘
+                                           ▼
+                            360° Engagement Analysis (capstone — always runs, it's a control)
 
   * skipped entirely (with a recorded reason) when the Research Director scopes them out
 ```
@@ -87,9 +148,12 @@ so they run in parallel rather than serialized one after another.
 Every deliverable that actually runs is generated, then reviewed by an
 adversarial "Chief Quality Officer" agent against a six-dimension rubric —
 Strategic Fit, Methodological Rigor, Analytical Depth, Commercial
-Actionability, Client-Readiness, and Risk/Compliance — and, if it fails,
-regenerated with the critique folded in, up to `QA_MAX_REVISIONS` times
-before being force-accepted (clearly flagged, never silently dropped).
+Actionability, Client-Readiness, and Risk/Compliance — **on a different
+provider than the one that generated it, whenever more than one is actually
+available**, and, if it fails, regenerated with the critique folded in, up to
+`QA_MAX_REVISIONS` times before being force-accepted (clearly flagged, never
+silently dropped). The report records whether each review was genuinely
+independent or (with only one provider configured) necessarily self-reviewed.
 
 The engagement closes with a **360° capstone**: a holistic audit of the whole
 completed engagement across Client Value, Methodological Soundness,
@@ -189,14 +253,20 @@ npm run build
 # Using your Claude subscription (default: auto — prefers passthru, then local, then API)
 npm start -- run --brief-file examples/sample-brief.md
 
+# Ground the quant/data workstreams in a real dataset instead of illustrative filler
+npm start -- run --brief-file examples/sample-brief.md --data ./survey-results.csv
+
+# Skip the commercial-engagement ceremony for a quick research question
+npm start -- run --brief "What's likely driving our churn in the mid-tier segment?" --depth direct_research
+
 # Force a local model (Ollama/LM Studio/etc.)
 npm start -- run --brief-file examples/sample-brief.md --mode local
 
 # Force direct API / OpenRouter waterfall mode
 npm start -- run --brief-file examples/sample-brief.md --mode api
 
-# Skip the brutal-QA loop for a fast, cheap dry run
-npm start -- run --brief-file examples/sample-brief.md --mode mock --no-qa --out ./tmp
+# Skip the brutal-QA loop and cross-engagement memory for a fast, cheap dry run
+npm start -- run --brief-file examples/sample-brief.md --mode mock --no-qa --no-memory --out ./tmp
 ```
 
 Or during development, skip the build step: `npm run dev -- run --brief "..."`.
@@ -228,26 +298,35 @@ src/
     agent.ts              binds a role to the provider router
   providers/
     types.ts               LLMProvider interface
-    router.ts                mode switch + fallback chain (passthru -> local -> api)
-    passthru.ts                Claude subscription via local CLI subprocess
+    router.ts                mode switch + fallback chain (passthru -> local -> api) + cross-provider exclusion
+    passthru.ts                Claude subscription via local CLI subprocess (+ real WebSearch/WebFetch)
     local.ts                    local OpenAI-compatible server (Ollama, LM Studio, ...)
-    anthropicDirect.ts            direct Anthropic API
+    anthropicDirect.ts            direct Anthropic API (+ real web_search tool)
     openaiDirect.ts                 direct OpenAI API
     openrouterWaterfall.ts            multi-key waterfall failover
     mock.ts                            offline provider for tests
   qa/
     format.ts             QA rubric, tagged-output format, parser
     qaReviewer.ts            the "brutal QA" reviewer + 360° capstone
-    reviewLoop.ts               generate -> review -> revise loop
+    reviewLoop.ts               generate -> review (independent provider) -> revise loop
+  analysis/
+    loadCsv.ts             small dependency-free CSV parser
+    stats.ts                  real descriptive stats + Pearson correlations, computed not guessed
+  memory/
+    agencyMemory.ts       persistent cross-engagement lessons-learned store
   orchestrator/
-    engagementPlan.ts     dynamic-scoping decision + parser
+    engagementPlan.ts     dynamic RESEARCH-scope decision + parser (qual/quant/fieldwork/data)
+    depthClassifier.ts       dynamic CEREMONY-depth decision + parser (direct_research/full_engagement)
     context.ts               engagement context + markdown report writer
     pipeline.ts                 the dynamic, parallelized workflow across all 12 agents
   cli.ts                   command-line entry point
 test/
-  pipeline.test.ts       end-to-end wiring test (mock provider)
-  engagementPlan.test.ts   dynamic-scoping parser unit tests
+  pipeline.test.ts       end-to-end wiring tests (mock provider) — full engagement + direct research
+  engagementPlan.test.ts   research-scope parser unit tests
+  depthClassifier.test.ts   ceremony-depth parser unit tests
   qaFormat.test.ts           QA-verdict parser unit tests
+  stats.test.ts               CSV parsing + real-statistics unit tests
+  agencyMemory.test.ts          lessons-learned store unit tests
 examples/
   sample-brief.md      example client brief to try the CLI against
 ```

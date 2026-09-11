@@ -23,28 +23,55 @@ export class AnthropicDirectProvider implements LLMProvider {
       throw new ProviderError("ANTHROPIC_API_KEY not set", this.name, false);
     }
 
+    // Real live web search (Anthropic's server-side web_search tool) for desk-research-type
+    // calls, so "findings" can cite actual current sources instead of only training-data recall.
+    // Best-effort: if the account/API version rejects this specific tool shape (a 4xx that isn't
+    // a plain rate limit), retry once without it rather than failing the whole call over an
+    // optional capability.
+    if (req.useWebSearch) {
+      try {
+        return await this.request(req, true);
+      } catch (err) {
+        const status = err instanceof ProviderError ? (err.cause as { status?: number } | undefined)?.status : undefined;
+        if (status && status >= 400 && status < 500 && status !== 429) {
+          return await this.request(req, false);
+        }
+        throw err;
+      }
+    }
+
+    return this.request(req, false);
+  }
+
+  private async request(req: CompletionRequest, withWebSearch: boolean): Promise<CompletionResult> {
+    const body: Record<string, unknown> = {
+      model: this.model,
+      max_tokens: req.maxTokens ?? 4096,
+      system: req.system,
+      messages: [{ role: "user", content: req.prompt }],
+    };
+    if (withWebSearch) {
+      body.tools = [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }];
+    }
+
     const res = await fetch(API_URL, {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-api-key": this.apiKey,
+        "x-api-key": this.apiKey!,
         "anthropic-version": ANTHROPIC_VERSION,
       },
-      body: JSON.stringify({
-        model: this.model,
-        max_tokens: req.maxTokens ?? 4096,
-        system: req.system,
-        messages: [{ role: "user", content: req.prompt }],
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!res.ok) {
       const retryable = res.status === 429 || res.status >= 500;
-      const body = await res.text().catch(() => "");
+      const responseBody = await res.text().catch(() => "");
       throw new ProviderError(
-        `Anthropic API error ${res.status}: ${body.slice(0, 300)}`,
+        `Anthropic API error ${res.status}${withWebSearch ? " (with web_search tool)" : ""}: ${responseBody.slice(0, 300)}`,
         this.name,
-        retryable
+        retryable,
+        { status: res.status }
       );
     }
 
@@ -57,6 +84,6 @@ export class AnthropicDirectProvider implements LLMProvider {
       .join("\n")
       .trim();
 
-    return { text, providerName: this.name, route: this.name };
+    return { text, providerName: this.name, route: withWebSearch ? `${this.name}+web_search` : this.name };
   }
 }

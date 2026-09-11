@@ -9,6 +9,8 @@ export interface AgentQAInfo {
   critique: string;
   revisions: number;
   parseOk: boolean;
+  /** True if the reviewer actually ran on a different provider than the one that generated the draft. */
+  crossProviderChecked: boolean;
 }
 
 export interface AgentRunResult {
@@ -16,8 +18,15 @@ export interface AgentRunResult {
   roleTitle: string;
   output: string;
   route: string;
+  /** Which provider actually generated this (stable name, unlike `route` which may carry a suffix). */
+  providerName: string;
   /** Present when the output went through the brutal-QA review loop. */
   qa?: AgentQAInfo;
+}
+
+export interface AgentRunOptions {
+  /** Ask a provider that supports it to ground this call in real, live web search. */
+  useWebSearch?: boolean;
 }
 
 /**
@@ -39,10 +48,11 @@ export class Agent {
     return this.role.title;
   }
 
-  async run(taskPrompt: string): Promise<AgentRunResult> {
+  async run(taskPrompt: string, opts: AgentRunOptions = {}): Promise<AgentRunResult> {
     const result = await this.router.complete({
       system: `${this.role.title} — ${this.role.mainResponsibility}\n\n${this.role.systemPrompt}`,
       prompt: taskPrompt,
+      useWebSearch: opts.useWebSearch,
     });
 
     return {
@@ -50,6 +60,7 @@ export class Agent {
       roleTitle: this.role.title,
       output: result.text,
       route: result.route,
+      providerName: result.providerName,
     };
   }
 }
